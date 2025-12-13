@@ -1,0 +1,46 @@
+name: Build External Repository
+
+on:
+  workflow_dispatch:  # 仅手动触发
+    inputs:
+      ref:
+        description: '分支、标签或提交哈希'
+        required: true
+        default: 'ui_editor'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout external repository
+      uses: actions/checkout@v4
+      with:
+        repository: 'Low-Drag-MC/LDLib2'
+        ref: ${{ github.event.inputs.ref }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Setup Java 21
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+    
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+    
+    - name: Make gradlew executable
+      run: chmod +x gradlew
+    
+    - name: Build with Gradle
+      run: ./gradlew build --no-daemon
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ldlib2-build-${{ github.event.inputs.ref }}
+        path: |
+          build/libs/*.jar
+          build/outputs/**/*.jar
+        retention-days: 30
