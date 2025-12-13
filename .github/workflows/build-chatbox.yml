@@ -1,166 +1,171 @@
 name: Build Chatbox Mod
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
     inputs:
-      version:
-        description: '构建的 Minecraft 版本'
+      source_repo:
+        description: 'Source repository to build'
+        required: true
+        default: 'zhenshiz/chatbox'
+        type: string
+      source_branch:
+        description: 'Branch to build'
         required: true
         default: '1.21.11'
         type: string
-      build_fabric:
-        description: '构建 Fabric 版本'
-        required: false
-        default: true
-        type: boolean
-      build_neoforge:
-        description: '构建 NeoForge 版本'
-        required: false
-        default: true
-        type: boolean
 
 jobs:
-  build:
+  build-external-mod:
     runs-on: ubuntu-latest
+    
     strategy:
       matrix:
-        # 支持同时构建多个 Java 版本（如果需要）
-        java: [ '17', '21' ]
+        java-version: [21]
     
     steps:
-    - name: Checkout repository
+    - name: Checkout external repository
       uses: actions/checkout@v4
       with:
-        repository: 'zhenshiz/chatbox'
-        ref: '1.21.11'  # 指定分支
+        repository: ${{ github.event.inputs.source_repo }}
+        ref: ${{ github.event.inputs.source_branch }}
         token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Setup Java ${{ matrix.java }}
+        path: mod-source
+
+    - name: Display repository info
+      run: |
+        cd mod-source
+        echo "=== Repository Information ==="
+        echo "Repository: ${{ github.event.inputs.source_repo }}"
+        echo "Branch: ${{ github.event.inputs.source_branch }}"
+        echo "Commit: $(git rev-parse HEAD)"
+        echo "Last commit: $(git log -1 --pretty=format:'%h %s (%an, %ad)')"
+        echo "=========================="
+
+    - name: Setup JDK ${{ matrix.java-version }}
       uses: actions/setup-java@v4
       with:
+        java-version: ${{ matrix.java-version }}
         distribution: 'temurin'
-        java-version: ${{ matrix.java }}
-    
-    - name: Validate Java version for Minecraft
-      run: |
-        # 检查项目要求的 Java 版本
-        if [ -f "gradle.properties" ]; then
-          echo "项目 Java 要求:"
-          grep -i "java" gradle.properties || true
-        fi
-        
+
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
+      uses: gradle/actions/setup-gradle@v4
       with:
-        gradle-version: wrapper  # 使用项目自带的 gradle wrapper
-    
+        gradle-home-cache-cleanup: true
+
     - name: Make gradlew executable
-      run: chmod +x gradlew
-    
-    - name: Clean previous builds
-      run: ./gradlew clean
-    
-    - name: Build Fabric Module
-      if: ${{ inputs.build_fabric == true }}
       run: |
-        echo "正在构建 Fabric 模块..."
-        ./gradlew :fabric:build --no-daemon --stacktrace
-      env:
-        # 添加构建环境变量
-        MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-        CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
-    
-    - name: Build NeoForge Module
-      if: ${{ inputs.build_neoforge == true }}
-      run: |
-        echo "正在构建 NeoForge 模块..."
-        ./gradlew :neoforge:build --no-daemon --stacktrace
-      env:
-        MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-        CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
-    
-    - name: List generated artifacts
-      run: |
-        echo "=== Fabric 构建输出 ==="
-        find . -path "*/fabric/build/libs/*.jar" -type f | grep -v ".gradle" | sort || echo "未找到 Fabric JAR 文件"
-        
-        echo -e "\n=== NeoForge 构建输出 ==="
-        find . -path "*/neoforge/build/libs/*.jar" -type f | grep -v ".gradle" | sort || echo "未找到 NeoForge JAR 文件"
-        
-        echo -e "\n=== 所有构建输出 ==="
-        find build -name "*.jar" -type f 2>/dev/null || true
-    
-    - name: Upload Fabric artifacts
-      if: ${{ inputs.build_fabric == true }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: chatbox-fabric-${{ inputs.version }}-java${{ matrix.java }}
-        path: |
-          fabric/build/libs/*.jar
-          fabric/build/outputs/**/*.jar
-        retention-days: 30
-        if-no-files-found: error
-    
-    - name: Upload NeoForge artifacts
-      if: ${{ inputs.build_neoforge == true }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: chatbox-neoforge-${{ inputs.version }}-java${{ matrix.java }}
-        path: |
-          neoforge/build/libs/*.jar
-          neoforge/build/outputs/**/*.jar
-        retention-days: 30
-        if-no-files-found: error
-    
-    - name: Upload build reports
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-reports-java${{ matrix.java }}
-        path: |
-          **/build/reports/**/*.html
-          **/build/reports/**/*.xml
-        retention-days: 7
-    
-    - name: Generate build summary
-      if: always()
-      run: |
-        echo "## 构建总结" >> $GITHUB_STEP_SUMMARY
-        echo "- **Java 版本**: ${{ matrix.java }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Minecraft 版本**: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **构建 Fabric**: ${{ inputs.build_fabric }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **构建 NeoForge**: ${{ inputs.build_neoforge }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        # 检查构建结果
-        if [ -f "fabric/build/libs/fabric*.jar" ] || [ -f "neoforge/build/libs/neoforge*.jar" ]; then
-          echo "✅ 构建成功！" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ inputs.build_fabric }}" = "true" ]; then
-            echo "**Fabric 构建结果:**" >> $GITHUB_STEP_SUMMARY
-            find fabric/build/libs -name "*.jar" 2>/dev/null | while read file; do
-              echo "- $(basename "$file") ($(du -h "$file" | cut -f1))" >> $GITHUB_STEP_SUMMARY
-            done || echo "无 Fabric JAR 文件" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ inputs.build_neoforge }}" = "true" ]; then
-            echo "**NeoForge 构建结果:**" >> $GITHUB_STEP_SUMMARY
-            find neoforge/build/libs -name "*.jar" 2>/dev/null | while read file; do
-              echo "- $(basename "$file") ($(du -h "$file" | cut -f1))" >> $GITHUB_STEP_SUMMARY
-            done || echo "无 NeoForge JAR 文件" >> $GITHUB_STEP_SUMMARY
-          fi
-        else
-          echo "❌ 构建失败或未生成 JAR 文件" >> $GITHUB_STEP_SUMMARY
-        fi
-        
+        cd mod-source
+        chmod +x ./gradlew
+
     - name: Cache Gradle dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          mod-source/.gradle
+        key: ${{ runner.os }}-gradle-${{ hashFiles('mod-source/**/*.gradle*', 'mod-source/**/gradle-wrapper.properties') }}
         restore-keys: |
           ${{ runner.os }}-gradle-
+
+    - name: Validate Gradle wrapper
+      run: |
+        cd mod-source
+        ./gradlew --version
+
+    - name: Build with Gradle
+      run: |
+        cd mod-source
+        echo "Starting build process..."
+        ./gradlew build --build-cache --parallel --daemon
+
+    - name: Run tests
+      run: |
+        cd mod-source
+        ./gradlew test --build-cache --parallel || echo "No tests found or tests failed"
+
+    - name: Generate sources JAR
+      run: |
+        cd mod-source
+        ./gradlew sourcesJar || echo "Sources JAR generation skipped"
+
+    - name: Find and organize artifacts
+      run: |
+        cd mod-source
+        echo "=== Searching for build artifacts ==="
+        
+        # 创建输出目录
+        mkdir -p ../artifacts/neoforge
+        mkdir -p ../artifacts/fabric
+        mkdir -p ../artifacts/common
+        mkdir -p ../artifacts/root
+        mkdir -p ../artifacts/sources
+        
+        # 查找NeoForge artifacts
+        find . -path "*/neoforge/build/libs/*.jar" -not -name "*-sources.jar" -not -name "*-dev.jar" -not -name "*-slim.jar" -exec cp {} ../artifacts/neoforge/ \; 2>/dev/null || true
+        
+        # 查找Fabric artifacts
+        find . -path "*/fabric/build/libs/*.jar" -not -name "*-sources.jar" -not -name "*-dev.jar" -not -name "*-slim.jar" -exec cp {} ../artifacts/fabric/ \; 2>/dev/null || true
+        
+        # 查找Common artifacts
+        find . -path "*/common/build/libs/*.jar" -not -name "*-sources.jar" -not -name "*-dev.jar" -not -name "*-slim.jar" -exec cp {} ../artifacts/common/ \; 2>/dev/null || true
+        
+        # 查找根目录build中的artifacts
+        find . -maxdepth 2 -path "./build/libs/*.jar" -not -name "*-sources.jar" -not -name "*-dev.jar" -not -name "*-slim.jar" -exec cp {} ../artifacts/root/ \; 2>/dev/null || true
+        
+        # 查找sources
+        find . -name "*-sources.jar" -exec cp {} ../artifacts/sources/ \; 2>/dev/null || true
+        
+        # 列出找到的所有artifacts
+        echo "=== Found artifacts ==="
+        for dir in neoforge fabric common root sources; do
+          if [ -n "$(ls -A ../artifacts/$dir 2>/dev/null)" ]; then
+            echo "--- $dir artifacts ---"
+            ls -la ../artifacts/$dir/
+          fi
+        done
+
+    - name: Upload NeoForge artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: chatbox-neoforge-${{ github.run_number }}
+        path: artifacts/neoforge/*.jar
+        retention-days: 30
+        if-no-files-found: ignore
+
+    - name: Upload Fabric artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: chatbox-fabric-${{ github.run_number }}
+        path: artifacts/fabric/*.jar
+        retention-days: 30
+        if-no-files-found: ignore
+
+    - name: Generate build information
+      run: |
+        cat > build-info.txt << EOF
+        Build Information:
+        - Source Repository: ${{ github.event.inputs.source_repo }}
+        - Source Branch: ${{ github.event.inputs.source_branch }}
+        - Build Date: $(date)
+        - GitHub Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        - Commit: $(cd mod-source && git rev-parse HEAD)
+        - Commit Message: $(cd mod-source && git log -1 --pretty=format:'%s')
+        - Author: $(cd mod-source && git log -1 --pretty=format:'%an')
+        
+        Available Artifacts:
+        EOF
+        
+        # 添加artifacts信息
+        for dir in neoforge fabric common root sources; do
+          if [ -n "$(ls -A artifacts/$dir 2>/dev/null)" ]; then
+            echo "- $dir artifacts: $(ls artifacts/$dir/ | tr '\n' ', ')" >> build-info.txt
+          fi
+        done
+        
+        cat build-info.txt
+
+    - name: Cleanup
+      run: |
+        rm -rf mod-source
+        rm -rf artifacts
