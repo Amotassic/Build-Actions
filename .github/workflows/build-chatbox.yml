@@ -1,0 +1,44 @@
+name: Simple Chatbox Build
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Clone repository
+      run: |
+        git clone --depth 1 --branch 1.21.11 https://github.com/zhenshiz/chatbox.git
+        cd chatbox
+    
+    - name: Setup Java 21
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+    
+    - name: Build
+      run: |
+        cd chatbox
+        chmod +x gradlew
+        ./gradlew build --no-daemon
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: chatbox-build
+        path: |
+          chatbox/fabric/build/libs/*.jar
+          chatbox/neoforge/build/libs/*.jar
+        retention-days: 30
+        
+    - name: Cache Gradle dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
