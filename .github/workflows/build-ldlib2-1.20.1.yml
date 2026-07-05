@@ -36,6 +36,8 @@ jobs:
 
       - name: 构建模组（Fabric + Forge）
         run: ./gradlew buildAll --no-daemon
+        env:
+          ORG_GRADLE_JAVA_HOME: ${{ env.JAVA_HOME }}  # 覆盖硬编码的 Windows 路径
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
