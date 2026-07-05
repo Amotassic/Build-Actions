@@ -35,7 +35,10 @@ jobs:
           restore-keys: ${{ runner.os }}-gradle-
 
       - name: 清理硬编码的 JDK 路径
-        run: sed -i '/^org.gradle.java.home=/d' gradle.properties
+        run: |
+          sed -i '/^org.gradle.java.home=/d' gradle.properties
+          sed -i '/maven.aliyun.com/d' build.gradle
+          sed -i '/maven.aliyun.com/d' settings.gradle
 
       - name: 构建模组（Fabric + Forge）
         run: ./gradlew buildAll --no-daemon
