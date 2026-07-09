@@ -37,7 +37,6 @@ jobs:
           sed -i '/^org.gradle.java.home=/d' gradle.properties
           sed -i '/maven.aliyun.com/d' build.gradle
           sed -i '/maven.aliyun.com/d' settings.gradle
-          sed -i 's/^tasks.named('\''jar'\'', Jar)\.configure {/mixin {\n    add sourceSets.main, "${mod_id}.refmap.json"\n    config "${mod_id}.mixins.json"\n}\n&/' build.gradle
 
       - name: 构建模组
         run: ./gradlew build --no-daemon
